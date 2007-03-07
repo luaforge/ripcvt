@@ -340,7 +340,6 @@ if (#arg == 0) then
 else
    if ( pos(arg[1], 58) ) then  -- position of ":"
       doflac,doogg,domp3,docmp = parseCvArg(arg[1])
-      print ("DOs:",doflac,doogg,domp3,docmp)
       for i=2,#arg,1 do
 	 getSrcDirs(arg[i], flacDirs, oggDirs, mp3Dirs, cmpDirs)
       end
@@ -352,44 +351,23 @@ else
    end
 end
 
-print ("flac dirs")
-for i,d in ipairs(flacDirs) do
-   print (d)
-end
-print ("ogg dirs")
-for i,d in ipairs(oggDirs) do
-   print (d)
-end
-print ("mp3 dirs")
-for i,d in ipairs(mp3Dirs) do
-   print (d)
-end
-print ("cmp dirs")
-for i,d in ipairs(cmpDirs) do
-   print (d)
-end
-
 -- perform conversions from Flac sources
 for i,d in ipairs(flacDirs) do
    flacdir,oggdir,mp3dir,cmpdir=dirs(d,"flac")
-   print(flacdir,oggdir,mp3dir,cmpdir)
    convert(d,flacdir,oggdir,mp3dir,cmpdir)
 end
 -- perform conversions from Ogg sources
 for i,d in ipairs(oggDirs) do
    flacdir,oggdir,mp3dir,cmpdir=dirs(d,"ogg")
-   print(flacdir,oggdir,mp3dir,cmpdir)
    convert(d,flacdir,oggdir,mp3dir,cmpdir)
 end
 -- perform conversions from MP3 sources
 for i,d in ipairs(mp3Dirs) do
    flacdir,oggdir,mp3dir,cmpdir=dirs(d,"mp3")
-   print(flacdir,oggdir,mp3dir,cmpdir)
    convert(d,flacdir,oggdir,mp3dir,cmpdir)
 end
 -- perform conversions from CMP sources
 for i,d in ipairs(cmpDirs) do
    flacdir,oggdir,mp3dir,cmpdir=dirs(d,"cmp")
-   print(d,flacdir,oggdir,mp3dir,cmpdir)
    convert(d,flacdir,oggdir,mp3dir,cmpdir)
 end
