@@ -46,29 +46,31 @@ like !, ?, ' and " in songs titles are really annoying), and to learn Lua.
 
 RipCvt has been tested exclusively with Lua-5.1 on Linux and should run on 
 others UNIX variants. It would require some porting effort to run on Windows 
-to accomodate Windows paths (again, LMKODIY).
+so as to accomodate Windows paths (again, LMKODIY).
 
-RipCvt depends on the following programs: Flac, oggEnc, Lame.
+RipCvt depends on the following programs: flac, oggenc, oggdec, lame, mpg321
 It also depends on the "ex" Lua package (see 
   http://lua-users.org/files/wiki_insecure/users/MarkEdgar/exapi)
 
-This is version 0.2. It is only able to convert from Flac to all of Ogg, Mp3-vbr
-and Mp3-cbr.
+This is version 0.3.
 
 Use is as:
 
 ripcvt.lua [path]*
 
 where each path has "flac" either as direct subdirectory or as a parent directory.
-RipCvt will create "ogg", "mp3" and "cmp3" directories as brothers of this
+RipCvt will create "ogg", "mp3" and "cmp" directories as brothers of this
 "flac" directory. It will inspect all subdirectories of the given path to
 find *.flac files in final subdirs (that is, subdirs without subdirs), build
-the corresponding subtrees under "ogg", "mp3" and "cmp3", and convert the flac
-files as expected into the "ogg", "mp3" and "cmp3" subtrees.
+the corresponding subtrees under "ogg", "mp3" and "cmp", and convert the flac
+files as expected into the "ogg", "mp3" and "cmp" subtrees.
 ]]
 
 require ("ex")
 
+doflac,doogg,domp3,docmp=0,0,0,0
+
+-- returns the position of char in str, or 0 if absent. 
 function pos(str,char)
    local i
    for i=1,string.len(str),1 do
@@ -79,8 +81,9 @@ function pos(str,char)
    return 0
 end
 
+-- returns with all components of dirname as items of list
 function decompose(dirname,list)
-   local p=pos(dirname,47)
+   local p=pos(dirname,47) -- 47 is '/'
    if (p ~= 0) then
       table.insert(list,string.sub(dirname,1,p-1))
       return decompose(string.sub(dirname,p+1,string.len(dirname)),list)
@@ -90,49 +93,68 @@ function decompose(dirname,list)
    end
 end
 
--- compute ogg, mp3 and cmp3 dirs from srcDir
--- currently we support only flac as src dir
-function dirs(srcDir)
-   local flacpos=string.find(srcDir,"/flac")
-   if ( not flacpos) then
-      return nil,nil,nil
+-- compute ogg, mp3 and cmp dirs from srcDir. 
+-- srcDir is an absolute path
+-- result is nil when format is not required
+function dirs(srcDir,fmt)
+   local srcpos=string.find(srcDir,"/"..fmt)
+   local flacdir,oggdir,mp3dir,cmpdir
+   if (not srcpos) then
+      return nil,nil,nil,nil
    end
-   local top=string.sub(srcDir,1,flacpos-1)
-   local relpath=string.sub(srcDir,flacpos+6)
-   os.chdir(top)
-   os.mkdir("ogg")
-   os.mkdir("mp3")
-   os.mkdir("cmp3")
+   local top=string.sub(srcDir,1,srcpos-1)
+   local relpath=string.sub(srcDir,srcpos+2+#fmt)
    local dirl={}
    decompose(relpath,dirl)
-   if (os.chdir("ogg")) then
-      for i,d in ipairs(dirl) do
-	 os.mkdir(d)
-	 os.chdir(d)
+   os.chdir(top)
+   if ((fmt ~= "flac") and doflac) then
+      os.mkdir("flac")
+      if (os.chdir("flac")) then
+	 for i,d in ipairs(dirl) do
+	    os.mkdir(d)
+	    os.chdir(d)
+	 end
+	 flacdir=os.currentdir()
       end
-      oggdir=os.currentdir()
    end
    os.chdir(top)
-   if (os.chdir("mp3")) then
-      for i,d in ipairs(dirl) do
-	 os.mkdir(d)
-	 os.chdir(d)
+   if ((fmt ~= "ogg") and doogg) then
+      os.mkdir("ogg")
+      if (os.chdir("ogg")) then
+	 for i,d in ipairs(dirl) do
+	    os.mkdir(d)
+	    os.chdir(d)
+	 end
+	 oggdir=os.currentdir()
       end
-      mp3dir=os.currentdir()
-   end  
+   end
    os.chdir(top)
-   if (os.chdir("cmp3")) then
-      for i,d in ipairs(dirl) do
-	 os.mkdir(d)
-	 os.chdir(d)
+   if ((fmt ~= "mp3") and domp3) then
+      os.mkdir("mp3")
+      if (os.chdir("mp3")) then
+	 for i,d in ipairs(dirl) do
+	    os.mkdir(d)
+	    os.chdir(d)
+	 end
+	 mp3dir=os.currentdir()
       end
-      cmp3dir=os.currentdir()
-   end  
+   end
    os.chdir(top)
-   return srcDir,oggdir,mp3dir,cmp3dir
+   if ((fmt ~= "cmp") and docmp) then
+      os.mkdir("cmp")
+      if (os.chdir("cmp")) then
+	 for i,d in ipairs(dirl) do
+	    os.mkdir(d)
+	    os.chdir(d)
+	 end
+	 cmpdir=os.currentdir()
+      end
+   end
+   os.chdir(top)
+   return flacdir,oggdir,mp3dir,cmpdir
 end
 
-
+-- remove trailing suffix
 function basename (name,suffix)
    local pos=string.find(name,suffix.."$")
    if (pos==nil) then
@@ -141,84 +163,233 @@ function basename (name,suffix)
    return string.sub(name,1,pos-1)
 end
 
-
-function convert(flacdir,oggdir,mp3dir,cmp3dir)
+-- convert audio files from one source dir 
+-- target dir is nil for unneeded formats
+function convert(srcdir,flacdir,oggdir,mp3dir,cmpdir)
    local current
    local title
-   os.chdir(flacdir)
+   os.chdir(srcdir)
    for current in os.dir(".") do
+      p1,p2,p3,p4=nil,nil,nil,nil
       title=basename(current.name,".flac")  
       if (current.type == "file") and (title ~= nil) then
-	 print("compressing "..title)
-	 p1=os.spawn("/usr/bin/oggenc",{args={"--quiet","-o",oggdir.."/"..title..".ogg",current.name}})
-	 p2=os.spawn("/usr/bin/flac",{args={"--silent","-d","-f","-o","tempo.wav",current.name}})
-	 p2:wait()
-	 p3=os.spawn("/usr/bin/lame",{args={"--silent","--preset","standard","tempo.wav",mp3dir.."/"..title..".mp3"}})
-	 p4=os.spawn("/usr/bin/lame",{args={"--silent","--preset","cbr","128","tempo.wav",cmp3dir.."/"..title..".mp3"}})
-	 p1:wait()    
-	 p3:wait()
-	 p4:wait()
+	 print("converting "..title)
+	 if (doogg) then
+	    p1=os.spawn("/usr/bin/oggenc",{args={"--quiet","-o",oggdir.."/"..title..".ogg",current.name}})
+	 end
+	 if (domp3 or docmp) then
+	    p2=os.spawn("/usr/bin/flac",{args={"--silent","-d","-f","-o","tempo.wav",current.name}})
+	    p2:wait()
+	    p2=nil
+	    if (domp3) then
+	       p3=os.spawn("/usr/bin/lame",{args={"--silent","--preset","standard","tempo.wav",mp3dir.."/"..title..".mp3"}})
+	    end
+	    if (docmp) then
+	       p4=os.spawn("/usr/bin/lame",{args={"--silent","--preset","cbr","128","tempo.wav",cmpdir.."/"..title..".mp3"}})
+	    end
+	 end
       end 
+
+      title=basename(current.name,".ogg")  
+      if (current.type == "file") and (title ~= nil) then
+	 print("converting "..title)
+	 p1=os.spawn("/usr/bin/oggdec",{args={current.name,"-o","tempo.wav"}})
+	 p1:wait()
+	 if (doflac) then
+	    p1=os.spawn("/usr/bin/flac",{args={"--best","-o",flacdir.."/"..title..".flac","tempo.wav"}})
+	 end
+	 if (domp3) then
+	    p3=os.spawn("/usr/bin/lame",{args={"--silent","--preset","standard","tempo.wav",mp3dir.."/"..title..".mp3"}})
+	 end
+	 if (docmp) then
+	    p4=os.spawn("/usr/bin/lame",{args={"--silent","--preset","cbr","128","tempo.wav",cmpdir.."/"..title..".mp3"}})
+	 end
+      end
+
+      title=basename(current.name,".mp3")
+      if (current.type == "file") and (title ~= nil) then
+	 print("converting "..title)
+	 if (doflac or doogg) then
+	    p1=os.spawn("/usr/bin/mpg321",{args={"--wav","tempo.wav",current.name}})
+	    p1:wait()
+	 end
+
+	 if (doflac) then
+	    p1=os.spawn("/usr/bin/flac",{args={"--best","-o",flacdir.."/"..title..".flac","tempo.wav"}})
+	 end
+	 if (doogg) then
+	    p2=os.spawn("/usr/bin/oggenc",{args={"--quiet","-o",oggdir.."/"..title..".ogg",current.name}})	    
+	 end
+	 if (domp3 and not string.match(srcdir, "/mp3")) then
+	    p3=os.spawn("/usr/bin/lame",{args={"--silent","--preset","standard",current.name,mp3dir.."/"..title..".mp3"}})
+	 end
+	 if (docmp and not string.match(srcdir, "/cmp")) then
+	    p4=os.spawn("/usr/bin/lame",{args={"--silent","--preset","cbr","128",current.name,cmpdir.."/"..title..".mp3"}})
+	 end
+      end
+
+      if (p1) then
+	 p1:wait()
+      end
+      if (p2) then
+	 p1:wait()
+      end
+      if (p3) then
+	 p3:wait()
+      end
+      if (p4) then
+	 p4:wait()
+      end
+
    end
    os.remove("tempo.wav")
 end
 
--- get all final subdirs, that is, subdirs without subdirs themselves
-function getAllSubDirs(dirs)
+-- get all final subdirs of current dir, that is, subdirs 
+-- without subdirs themselves. Put result in "dirs" arg.
+function getAllSubDirs(dirl)
    local final=1
    local orig=os.currentdir()
    for current in os.dir(".") do
       if (current.type == "directory") then
-	 final=nil
-	 os.chdir(current.name)
-	 getAllSubDirs(dirs)
-	 os.chdir(orig)
+	 final=nil -- current is not a final directory
+	 os.chdir(current.name) -- explore subdir
+	 getAllSubDirs(dirl)
+	 os.chdir(orig)  -- come back each time
       end
    end
    if (final) then
-      table.insert(dirs,os.currentdir())
+      table.insert(dirl,os.currentdir())
    end
 end
 
+
 -- compute a set of source dirs from one root
-function getSrcDirs(root, flacDirs)
+function getSrcDirs(a_root, flacDirs, oggDirs, mp3Dirs, cmpDirs)
    local start=os.currentdir()
-   os.chdir(root)
-   local root=os.currentdir()
+   os.chdir(a_root)
+   local root=os.currentdir() -- absolute path
+   --[[
    local flacEnt=os.dirent("./flac")
+   local oggEnt=os.dirent("./ogg")
+   local mp3Ent=os.dirent("./mp3")
+   local cmpEnt=os.dirent("./cmp")
    if ( (flacEnt ~= nil) and (flacEnt.type == "directory") ) then
-      os.chdir("./flac")
+      os.chdir(root.."/flac")
       getAllSubDirs(flacDirs)
-   else
-      local flacpos=string.find(root,"/flac")
-      if (flacpos) then
-	 getAllSubDirs(flacDirs)
-	 os.chdir(string.sub(root,1,flacpos-1))
+   end
+   if ( (oggEnt ~= nil) and (oggEnt.type == "directory") ) then
+      os.chdir(root.."/ogg")
+      getAllSubDirs(oggDirs)
+   end
+   if ( (mp3Ent ~= nil) and (mp3Ent.type == "directory") ) then
+      os.chdir(root.."/mp3")
+      getAllSubDirs(mp3Dirs)
+   end
+   if ( (cmpEnt ~= nil) and (cmpEnt.type == "directory") ) then
+      os.chdir(root.."/cmp")
+      getAllSubDirs(cmpDirs)
+   end
+]]
+   local allDirs={}
+   getAllSubDirs(allDirs)
+   for i,d in ipairs(allDirs) do
+      if (string.match(d,"/flac")) then
+	 table.insert(flacDirs,d)
+      end
+      if (string.match(d,"/ogg")) then
+	 table.insert(flacDirs,d)
+      end
+      if (string.match(d,"/mp3")) then
+	 table.insert(flacDirs,d)
+      end
+      if (string.match(d,"/cmp")) then
+	 table.insert(flacDirs,d)
       end
    end
    os.chdir(start)
 end
 
+-- returns 1 for each target format
+function parseCvArg(arg)
+   local cvfl,cvog,cvmp,cvcm
+   for w in string.gmatch(arg,"%w+") do
+      if (w=="flac") then
+        cvfl=1
+      end
+      if (w=="ogg") then
+        cvog=1
+      end
+      if (w=="mp3") then
+        cvmp=1
+      end
+      if (w=="cmp") then
+        cvcm=1
+      end
+   end
+   return cvfl,cvog,cvmp,cvcm
+end
 
 -- compute complete list of source directories
 flacDirs={}
+oggDirs={}
+mp3Dirs={}
+cmpDirs={}
 if (#arg == 0) then
-   getSrcDirs(".", flacDirs)
+   getSrcDirs(".", flacDirs, oggDirs, mp3Dirs, cmpDirs)
 else
-   for i=1,#arg,1 do
-      getSrcDirs(arg[i], flacDirs)
+   if ( pos(arg[1], 58) ) then  -- position of ":"
+      doflac,doogg,domp3,docmp = parseCvArg(arg[1])
+      print ("DOs:",doflac,doogg,domp3,docmp)
+      for i=2,#arg,1 do
+	 getSrcDirs(arg[i], flacDirs, oggDirs, mp3Dirs, cmpDirs)
+      end
+   else
+      doflac,doogg,domp3,docmp=1,1,1,1
+      for i=1,#arg,1 do
+	 getSrcDirs(arg[i], flacDirs, oggDirs, mp3Dirs, cmpDirs)
+      end
    end
 end
 
+print ("flac dirs")
 for i,d in ipairs(flacDirs) do
    print (d)
 end
+print ("ogg dirs")
+for i,d in ipairs(oggDirs) do
+   print (d)
+end
+print ("mp3 dirs")
+for i,d in ipairs(mp3Dirs) do
+   print (d)
+end
+print ("cmp dirs")
+for i,d in ipairs(cmpDirs) do
+   print (d)
+end
 
-
-
--- perform conversions
+-- perform conversions from Flac sources
 for i,d in ipairs(flacDirs) do
-   flacdir,oggdir,mp3dir,cmp3dir=dirs(d)
-   print (flacdir,oggdir,mp3dir)
-   convert(flacdir,oggdir,mp3dir,cmp3dir)
+   flacdir,oggdir,mp3dir,cmpdir=dirs(d,"flac")
+   print(flacdir,oggdir,mp3dir,cmpdir)
+   convert(d,flacdir,oggdir,mp3dir,cmpdir)
+end
+-- perform conversions from Ogg sources
+for i,d in ipairs(oggDirs) do
+   flacdir,oggdir,mp3dir,cmpdir=dirs(d,"ogg")
+   print(flacdir,oggdir,mp3dir,cmpdir)
+   convert(d,flacdir,oggdir,mp3dir,cmpdir)
+end
+-- perform conversions from MP3 sources
+for i,d in ipairs(mp3Dirs) do
+   flacdir,oggdir,mp3dir,cmpdir=dirs(d,"mp3")
+   print(flacdir,oggdir,mp3dir,cmpdir)
+   convert(d,flacdir,oggdir,mp3dir,cmpdir)
+end
+-- perform conversions from CMP sources
+for i,d in ipairs(cmpDirs) do
+   flacdir,oggdir,mp3dir,cmpdir=dirs(d,"cmp")
+   print(d,flacdir,oggdir,mp3dir,cmpdir)
+   convert(d,flacdir,oggdir,mp3dir,cmpdir)
 end
