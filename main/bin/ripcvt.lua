@@ -52,11 +52,11 @@ RipCvt depends on the following programs: flac, oggenc, oggdec, lame, mpg321
 It also depends on the "ex" Lua package (see 
   http://lua-users.org/files/wiki_insecure/users/MarkEdgar/exapi)
 
-This is version 0.3.
+This is version 0.4.
 
 Use is as:
 
-ripcvt.lua [path]*
+ripcvt.lua [--target-format|-f format-list] [--target-dir|-d directory] [path]*
 
 where each path has "flac" either as direct subdirectory or as a parent directory.
 RipCvt will create "ogg", "mp3" and "cmp" directories as brothers of this
@@ -69,6 +69,7 @@ files as expected into the "ogg", "mp3" and "cmp" subtrees.
 require ("ex")
 
 doflac,doogg,domp3,docmp=0,0,0,0
+targetdir=''
 
 -- returns the position of char in str, or 0 if absent. 
 function pos(str,char)
@@ -93,16 +94,23 @@ function decompose(dirname,list)
    end
 end
 
--- compute ogg, mp3 and cmp dirs from srcDir. 
+-- compute flac, ogg, mp3 and cmp dirs from srcDir. 
 -- srcDir is an absolute path
+-- fmt is the source format, ie the format of the files in srcDir
 -- result is nil when format is not required
 function dirs(srcDir,fmt)
    local srcpos=string.find(srcDir,"/"..fmt)
    local flacdir,oggdir,mp3dir,cmpdir
    if (not srcpos) then
+      -- srcDir not an absolute path !!
       return nil,nil,nil,nil
    end
-   local top=string.sub(srcDir,1,srcpos-1)
+   local top
+   if (targetdir == '') then
+      top=string.sub(srcDir,1,srcpos-1)
+   else
+      top=targetdir
+   end
    local relpath=string.sub(srcDir,srcpos+2+#fmt)
    local dirl={}
    decompose(relpath,dirl)
@@ -310,7 +318,7 @@ function getSrcDirs(a_root, flacDirs, oggDirs, mp3Dirs, cmpDirs)
    os.chdir(start)
 end
 
--- returns 1 for each target format
+-- returns 1 for each selected target format
 function parseCvArg(arg)
    local cvfl,cvog,cvmp,cvcm
    for w in string.gmatch(arg,"%w+") do
@@ -330,26 +338,66 @@ function parseCvArg(arg)
    return cvfl,cvog,cvmp,cvcm
 end
 
+-- display usage and exits
+function usage()
+   print ("Usage: ripcvt.lua [--target-format|-f format-list] [--target-dir|-d directory] [path]*")
+   os.exit()
+end
+
+-- Parse all arguments
+function parseArgs(arg)
+   local index=1
+   local formatdone,dirdone,srcdone=0,0,0
+   while (index <= #arg) do
+      optdone=0
+      if ((arg[index] == "--target-format") or (arg[index] == "-f")) then
+	 index = index+1
+	 if ((index > #arg) or (formatdone=1)) then
+	    usage()
+	 end
+	 doflac,doogg,domp3,docmp = parseCvArg(arg[index])
+	 formatdone=1
+	 optdone=1
+      end
+
+      if ((arg[index] == "--target-dir") or (arg[index] == "-d")) then
+	 index = index+1
+	 if ((index > #arg) or (dirdone=1)) then
+	    usage()
+	 end
+	 targetdir=arg[index]
+	 dirdone=1
+	 optdone=1
+      end
+
+      if (optdone == 0) then
+	 getSrcDirs(arg[index], flacDirs, oggDirs, mp3Dirs, cmpDirs)
+	 srcdone=1
+      end
+
+      index=index+1
+   end
+
+   if (srcdone == 0) then
+      getSrcDirs(".", flacDirs, oggDirs, mp3Dirs, cmpDirs)
+   end
+
+   if (formatdone == 0) then
+      doflac,doogg,domp3,docmp=1,1,1,1
+   end
+
+end
+
+
+
 -- compute complete list of source directories
 flacDirs={}
 oggDirs={}
 mp3Dirs={}
 cmpDirs={}
-if (#arg == 0) then
-   getSrcDirs(".", flacDirs, oggDirs, mp3Dirs, cmpDirs)
-else
-   if ( pos(arg[1], 58) ) then  -- position of ":"
-      doflac,doogg,domp3,docmp = parseCvArg(arg[1])
-      for i=2,#arg,1 do
-	 getSrcDirs(arg[i], flacDirs, oggDirs, mp3Dirs, cmpDirs)
-      end
-   else
-      doflac,doogg,domp3,docmp=1,1,1,1
-      for i=1,#arg,1 do
-	 getSrcDirs(arg[i], flacDirs, oggDirs, mp3Dirs, cmpDirs)
-      end
-   end
-end
+
+parseArgs(flacDirs, oggDirs, mp3Dirs, cmpDirs)
+
 
 -- perform conversions from Flac sources
 for i,d in ipairs(flacDirs) do
