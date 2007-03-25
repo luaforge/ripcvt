@@ -282,6 +282,9 @@ end
 
 
 -- compute a set of source dirs from one root
+-- it seems we don't need to distinguish the type of src dirs as
+-- the conversion itself distinguishes the type of individual src files
+-- it suffices to detect the names of audio dirs
 function getSrcDirs(a_root, flacDirs, oggDirs, mp3Dirs, cmpDirs)
    print ("getSrcDirs", a_root, os.currentdir() )
    local start=os.currentdir()
@@ -292,17 +295,18 @@ function getSrcDirs(a_root, flacDirs, oggDirs, mp3Dirs, cmpDirs)
    getAllSubDirs(allDirs)
 
    for i,d in ipairs(allDirs) do
+      print("examining",d)
       if (string.match(d,"/flac")) then
 	 table.insert(flacDirs,d)
       end
       if (string.match(d,"/ogg")) then
-	 table.insert(flacDirs,d)
+	 table.insert(oggDirs,d)
       end
       if (string.match(d,"/mp3")) then
-	 table.insert(flacDirs,d)
+	 table.insert(mp3Dirs,d)
       end
       if (string.match(d,"/cmp")) then
-	 table.insert(flacDirs,d)
+	 table.insert(cmpDirs,d)
       end
    end
    os.chdir(start)
