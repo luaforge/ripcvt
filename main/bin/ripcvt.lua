@@ -71,6 +71,8 @@ require ("ex")
 doflac,doogg,domp3,docmp=0,0,0,0
 targetdir=''
 
+--  ########## COMMON FUNCTIONS #########
+
 -- returns the position of char in str, or 0 if absent. 
 function pos(str,char)
    local i
@@ -94,10 +96,14 @@ function decompose(dirname,list)
    end
 end
 
--- compute flac, ogg, mp3 and cmp dirs from srcDir. 
--- srcDir is an absolute path
--- fmt is the source format, ie the format of the files in srcDir
--- result is nil when format is not required
+-- ######### OUTPUT GENERATION ########
+
+--[[ 
+    compute destination flac, ogg, mp3 and cmp dirs from srcDir. 
+    srcDir is an absolute path
+    fmt is the source format, ie the format of the files in srcDir
+    result is nil when format is not required
+]]
 function dirs(srcDir,fmt)
    local srcpos=string.find(srcDir,"/"..fmt)
    local flacdir,oggdir,mp3dir,cmpdir
@@ -253,9 +259,12 @@ function convert(srcdir,flacdir,oggdir,mp3dir,cmpdir)
    os.remove("tempo.wav")
 end
 
+-- ######### INPUT PARSING AND ANALYSIS ######### 
+
 -- get all final subdirs of current dir, that is, subdirs 
 -- without subdirs themselves. Put result in "dirs" arg.
 function getAllSubDirs(dirl)
+   print ("getAllSubDirs", os.currentdir())
    local final=1
    local orig=os.currentdir()
    for current in os.dir(".") do
@@ -274,33 +283,14 @@ end
 
 -- compute a set of source dirs from one root
 function getSrcDirs(a_root, flacDirs, oggDirs, mp3Dirs, cmpDirs)
+   print ("getSrcDirs", a_root, os.currentdir() )
    local start=os.currentdir()
    os.chdir(a_root)
    local root=os.currentdir() -- absolute path
-   --[[
-   local flacEnt=os.dirent("./flac")
-   local oggEnt=os.dirent("./ogg")
-   local mp3Ent=os.dirent("./mp3")
-   local cmpEnt=os.dirent("./cmp")
-   if ( (flacEnt ~= nil) and (flacEnt.type == "directory") ) then
-      os.chdir(root.."/flac")
-      getAllSubDirs(flacDirs)
-   end
-   if ( (oggEnt ~= nil) and (oggEnt.type == "directory") ) then
-      os.chdir(root.."/ogg")
-      getAllSubDirs(oggDirs)
-   end
-   if ( (mp3Ent ~= nil) and (mp3Ent.type == "directory") ) then
-      os.chdir(root.."/mp3")
-      getAllSubDirs(mp3Dirs)
-   end
-   if ( (cmpEnt ~= nil) and (cmpEnt.type == "directory") ) then
-      os.chdir(root.."/cmp")
-      getAllSubDirs(cmpDirs)
-   end
-]]
+
    local allDirs={}
    getAllSubDirs(allDirs)
+
    for i,d in ipairs(allDirs) do
       if (string.match(d,"/flac")) then
 	 table.insert(flacDirs,d)
@@ -344,15 +334,24 @@ function usage()
    os.exit()
 end
 
+-- check that the argument is a proper directory
+function checkdir(a_dir)
+   exists,error=os.dir(a_dir)
+   if (exists==nil) then
+      usage()
+   end
+end
+
+
 -- Parse all arguments
-function parseArgs(arg)
+function parseArgs(arg, flacDirs, oggDirs, mp3Dirs, cmpDirs)
    local index=1
    local formatdone,dirdone,srcdone=0,0,0
    while (index <= #arg) do
       optdone=0
       if ((arg[index] == "--target-format") or (arg[index] == "-f")) then
 	 index = index+1
-	 if ((index > #arg) or (formatdone=1)) then
+	 if ((index > #arg) or (formatdone==1)) then
 	    usage()
 	 end
 	 doflac,doogg,domp3,docmp = parseCvArg(arg[index])
@@ -362,15 +361,17 @@ function parseArgs(arg)
 
       if ((arg[index] == "--target-dir") or (arg[index] == "-d")) then
 	 index = index+1
-	 if ((index > #arg) or (dirdone=1)) then
+	 if ((index > #arg) or (dirdone==1)) then
 	    usage()
 	 end
+	 checkdir(arg[index])
 	 targetdir=arg[index]
 	 dirdone=1
 	 optdone=1
       end
 
       if (optdone == 0) then
+	 checkdir(arg[index])
 	 getSrcDirs(arg[index], flacDirs, oggDirs, mp3Dirs, cmpDirs)
 	 srcdone=1
       end
@@ -383,7 +384,7 @@ function parseArgs(arg)
    end
 
    if (formatdone == 0) then
-      doflac,doogg,domp3,docmp=1,1,1,1
+      doflac,doogg,domp3,docmp=0,1,1,1
    end
 
 end
@@ -396,7 +397,7 @@ oggDirs={}
 mp3Dirs={}
 cmpDirs={}
 
-parseArgs(flacDirs, oggDirs, mp3Dirs, cmpDirs)
+parseArgs(arg, flacDirs, oggDirs, mp3Dirs, cmpDirs)
 
 
 -- perform conversions from Flac sources
