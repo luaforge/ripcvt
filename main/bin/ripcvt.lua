@@ -37,7 +37,7 @@ THE SOFTWARE.
 
 --[[
 RipCvt is a tool to automate the conversion of ripped audio between various
-formats. Currently it uses Flac, Ogg, Mp3-vbr and Mp3-vbr. 
+formats. Currently it uses Flac, Ogg, Mp3-vbr and Mp3-cbr. 
 If there's interest for others, LMKODIY (let me know or do it yourself)
 
 The motivation for writing this in Lua instead of Bash, Perl or Python is 
@@ -58,18 +58,27 @@ Use is as:
 
 ripcvt.lua [--target-format|-f format-list] [--target-dir|-d directory] [path]*
 
-where each path has "flac" either as direct subdirectory or as a parent directory.
-RipCvt will create "ogg", "mp3" and "cmp" directories as brothers of this
-"flac" directory. It will inspect all subdirectories of the given path to
-find *.flac files in final subdirs (that is, subdirs without subdirs), build
-the corresponding subtrees under "ogg", "mp3" and "cmp", and convert the flac
-files as expected into the "ogg", "mp3" and "cmp" subtrees.
+where each path has "flac", "ogg", "mp3" or "cmp" either as direct subdirectory 
+or as a parent directory. These are the source directory.
+
+Depending on the selected target formats, RipCvt will create any of "flac", "ogg", 
+"mp3" and "cmp" directories as brothers of these source directories. It will inspect 
+all subdirectories of the given path to find audio files in final subdirs (that is, 
+subdirs without subdirs), build the corresponding subtrees under "flac", "ogg", 
+"mp3" and "cmp". These are the target directories.
+
+Ripcvt will then convert the source files as expected into the target directories.
+-d allows to create the converted files under a different subdirectory than the
+original
+-f selects the format, by default it is ogg:mp3:cmp.
 ]]
 
 require ("ex")
 
 doflac,doogg,domp3,docmp=0,0,0,0
 targetdir=''
+
+__debug=0
 
 --  ########## COMMON FUNCTIONS #########
 
@@ -264,7 +273,10 @@ end
 -- get all final subdirs of current dir, that is, subdirs 
 -- without subdirs themselves. Put result in "dirs" arg.
 function getAllSubDirs(dirl)
-   print ("getAllSubDirs", os.currentdir())
+   if (__debug==1) then
+      print ("getAllSubDirs", os.currentdir())
+   end
+
    local final=1
    local orig=os.currentdir()
    for current in os.dir(".") do
@@ -285,8 +297,11 @@ end
 -- it seems we don't need to distinguish the type of src dirs as
 -- the conversion itself distinguishes the type of individual src files
 -- it suffices to detect the names of audio dirs
-function getSrcDirs(a_root, flacDirs, oggDirs, mp3Dirs, cmpDirs)
-   print ("getSrcDirs", a_root, os.currentdir() )
+function getSrcDirs(a_root, musicDirs)
+   if (__debug == 1) then
+      print ("getSrcDirs", a_root, os.currentdir() )
+   end
+
    local start=os.currentdir()
    os.chdir(a_root)
    local root=os.currentdir() -- absolute path
@@ -296,17 +311,8 @@ function getSrcDirs(a_root, flacDirs, oggDirs, mp3Dirs, cmpDirs)
 
    for i,d in ipairs(allDirs) do
       print("examining",d)
-      if (string.match(d,"/flac")) then
-	 table.insert(flacDirs,d)
-      end
-      if (string.match(d,"/ogg")) then
-	 table.insert(oggDirs,d)
-      end
-      if (string.match(d,"/mp3")) then
-	 table.insert(mp3Dirs,d)
-      end
-      if (string.match(d,"/cmp")) then
-	 table.insert(cmpDirs,d)
+      if (string.match(d,"/flac")) or (string.match(d,"/ogg")) or  (string.match(d,"/mp3")) or  (string.match(d,"/cmp")) then
+	 table.insert(musicDirs,d)
       end
    end
    os.chdir(start)
@@ -396,31 +402,15 @@ end
 
 
 -- compute complete list of source directories
-flacDirs={}
-oggDirs={}
-mp3Dirs={}
-cmpDirs={}
+musicDirs={}
 
-parseArgs(arg, flacDirs, oggDirs, mp3Dirs, cmpDirs)
+parseArgs(arg, musicDirs)
 
 
--- perform conversions from Flac sources
-for i,d in ipairs(flacDirs) do
+-- perform conversions from sources
+for i,d in ipairs(musicDirs) do
+   -- compute and create target dirs
    flacdir,oggdir,mp3dir,cmpdir=dirs(d,"flac")
-   convert(d,flacdir,oggdir,mp3dir,cmpdir)
-end
--- perform conversions from Ogg sources
-for i,d in ipairs(oggDirs) do
-   flacdir,oggdir,mp3dir,cmpdir=dirs(d,"ogg")
-   convert(d,flacdir,oggdir,mp3dir,cmpdir)
-end
--- perform conversions from MP3 sources
-for i,d in ipairs(mp3Dirs) do
-   flacdir,oggdir,mp3dir,cmpdir=dirs(d,"mp3")
-   convert(d,flacdir,oggdir,mp3dir,cmpdir)
-end
--- perform conversions from CMP sources
-for i,d in ipairs(cmpDirs) do
-   flacdir,oggdir,mp3dir,cmpdir=dirs(d,"cmp")
+   -- perform conversions
    convert(d,flacdir,oggdir,mp3dir,cmpdir)
 end
